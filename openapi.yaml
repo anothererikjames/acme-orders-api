@@ -1,116 +1,162 @@
-openapi: 3.0.3
+openapi: 3.0.0
 info:
-  title: Billing API
-  description: Subscription, invoice, and payment management
-  version: "1.0.0"
-  contact:
-    name: Billing Team
-    email: billing@example.com
-security:
-  - BearerAuth: []
-
+  title: Orders API
+  description: Order lifecycle management for the ACME platform — creation, fulfillment, tracking, and cancellation.
+  version: 2.1.0
 servers:
-  - url: https://billing.api.example.com/v1
+  - url: https://orders.acme-platform.internal/v2
     description: Production
-  - url: https://billing-dev.api.example.com/v1
+  - url: https://orders-dev.acme-platform.internal/v2
     description: Development
-
+security:
+  - bearerAuth: []
+tags:
+  - name: orders
+  - name: fulfillment
 paths:
-  /subscriptions:
+  /health:
     get:
-      operationId: listSubscriptions
-      summary: List all subscriptions
-      tags: [Subscriptions]
+      summary: Health check
       responses:
-        "200":
-          description: List of subscriptions
-
-    post:
-      operationId: createSubscription
-      summary: Create a new subscription
-      tags: [Subscriptions]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SubscriptionInput"
-      responses:
-        "201":
-          description: Subscription created
-
-  /invoices:
+        '200':
+          description: Service healthy
+  /orders:
     get:
-      operationId: listInvoices
-      summary: List invoices
-      tags: [Invoices]
-      responses:
-        "200":
-          description: List of invoices
-
-  /invoices/{invoiceId}:
-    get:
-      operationId: getInvoice
-      summary: Get invoice by ID
-      tags: [Invoices]
+      tags: [orders]
+      summary: List orders
       parameters:
-        - name: invoiceId
-          in: path
-          required: true
+        - name: status
+          in: query
           schema:
             type: string
+            enum: [pending, confirmed, shipped, delivered, cancelled]
+        - name: customerId
+          in: query
+          schema: {type: string}
+        - name: page
+          in: query
+          schema: {type: integer, default: 1}
       responses:
-        "200":
-          description: Invoice details
-        "404":
-          description: Invoice not found
-
-  /payment-methods:
-    get:
-      operationId: listPaymentMethods
-      summary: List saved payment methods
-      tags: [Payment Methods]
-      responses:
-        "200":
-          description: Payment methods list
-
+        '200':
+          description: Paginated list of orders
     post:
-      operationId: addPaymentMethod
-      summary: Add a payment method
-      tags: [Payment Methods]
+      tags: [orders]
+      summary: Create order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OrderInput'}
+      responses:
+        '201':
+          description: Order created
+  /orders/{orderId}:
+    get:
+      tags: [orders]
+      summary: Get order by ID
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Order details
+        '404':
+          description: Order not found
+    patch:
+      tags: [orders]
+      summary: Update order
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        '200':
+          description: Order updated
+  /orders/{orderId}/cancel:
+    post:
+      tags: [orders]
+      summary: Cancel order
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Order cancelled
+        '409':
+          description: Order cannot be cancelled
+  /orders/{orderId}/items:
+    get:
+      tags: [orders]
+      summary: Get order line items
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Order items
+  /orders/track/{trackingId}:
+    get:
+      tags: [fulfillment]
+      summary: Track shipment
+      parameters:
+        - name: trackingId
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Tracking details
+        '404':
+          description: Tracking ID not found
+  /orders/{orderId}/fulfill:
+    post:
+      tags: [fulfillment]
+      summary: Mark order fulfilled
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: {type: string}
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/PaymentMethodInput"
+              type: object
+              properties:
+                trackingId: {type: string}
+                carrier: {type: string}
       responses:
-        "201":
-          description: Payment method added
-
+        '200':
+          description: Fulfillment recorded
 components:
   securitySchemes:
-    BearerAuth:
+    bearerAuth:
       type: http
       scheme: bearer
-      bearerFormat: JWT
-
   schemas:
-    SubscriptionInput:
+    OrderInput:
       type: object
-      required: [planId, customerId]
+      required: [customerId, items]
       properties:
-        planId:
-          type: string
-        customerId:
-          type: string
-
-    PaymentMethodInput:
-      type: object
-      required: [type, token]
-      properties:
-        type:
-          type: string
-          enum: [card, bank_account]
-        token:
-          type: string
+        customerId: {type: string}
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              itemId: {type: string}
+              quantity: {type: integer}
+        shippingAddress: {type: object}
